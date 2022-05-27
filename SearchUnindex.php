@@ -42,6 +42,14 @@ class SearchUnindex extends Command
     protected $modelsPath;
 
     /**
+     * An array of warning when a relations is from a dependency and
+     * maybe optional.
+     *
+     * @var array
+     */
+    protected $optionalRelationshipWarnings = [];
+
+    /**
      * Execute the console command.
      *
      * @return int
@@ -186,8 +194,9 @@ class SearchUnindex extends Command
             $index = DB::select("show index from `{$table}` where Column_name='{$column}';");
         } catch (\Throwable $th) {
             // this is a must show error.
-            $this->warn($table . '.' . $column . ' not found in database, this may be a relationship from dependencies that are optional');
-            $index = null;
+            if (! in_array($table . '.' . $column, $this->optionalRelationshipWarnings)) {
+                $this->optionalRelationshipWarnings[] = $table . '.' . $column;
+            }
         }
 
         return ! empty($index);
@@ -208,13 +217,20 @@ class SearchUnindex extends Command
 
         // tell the world about the truth in each relationship.
         foreach ($relationships as $relationship) {
+            $fkString = $relationship['fk_table'] .  '.' . $relationship['fk_column'];
 
             if (! $relationship['fk_indexed']) {
-                $this->error($relationship['fk_table'] .  '.' . $relationship['fk_column'] . ' is not indexed');
+                // if not in optional list
+                if (! in_array($fkString, $this->optionalRelationshipWarnings)) {
+                    $this->error($fkString. ' is not indexed.');
+                } else {
+                    //if in optional list
+                    $this->warn($fkString. ' is not indexed. However this may be a result from dependency relationship. Pleas verify if needed.');
+                }
             } else {
                 // only if show all is flag
                 if ($this->option('show-all')) {
-                    $this->info($relationship['fk_table'] .  '.' . $relationship['fk_column'] . ' is indexed');
+                    $this->info($fkString . ' is indexed.');
                 }
             }
         }
