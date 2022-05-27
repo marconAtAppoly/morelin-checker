@@ -2,11 +2,9 @@
 
 namespace App\Console\Commands\Researches;
 
-use App\Appointment;
 use ReflectionClass;
 use ReflectionMethod;
 use Illuminate\Console\Command;
-use PhpParser\Node\Stmt\TryCatch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +17,7 @@ class SearchUnindex extends Command
      *
      * @var string
      */
-    protected $signature = 'appoly:model-relationship-index-hunt';
+    protected $signature = 'appoly:morelin-check {--dir=} {--show-all} {--show-others}' ;
 
     /**
      * The console command description.
@@ -43,31 +41,25 @@ class SearchUnindex extends Command
     protected $modelsPath;
 
     /**
-     * The namespace for models.
-     *
-     * @var string
-     */
-    protected $modelsNameSpace;
-
-
-    public function __construct()
-    {
-        parent::__construct();
-
-        $this->resolveModelsFolderPathAndNameSpace();
-    }
-
-    /**
      * Execute the console command.
      *
      * @return int
      */
     public function handle()
     {
+        $this->resolveModelsFolderPath();
         // get all models
         $modelReflections = $this->getModelRefelctions();
 
+        if (! $modelReflections) {
+            return;
+        }
         $relationships = [];
+
+        if ($modelReflections->count() == 0) {
+            $this->warn('No models found. Try another agency.');
+            return;
+        }
 
         $this->output->progressStart($modelReflections->count());
         // loop through all found models
@@ -75,15 +67,18 @@ class SearchUnindex extends Command
             $this->output->progressAdvance();
 
             $modelClassName =  $modelReflection->getName();
-            $this->info('Processing model: ' . $modelClassName);
+
+            if ($this->option('show-others')) {
+                $this->info('Processing model: ' . $modelClassName);
+            }
 
             foreach (($modelReflection->getMethods(ReflectionMethod::IS_PUBLIC)) as $method) {
 
                 $model = new $modelClassName;
                 if (
-                    $method->class != $modelClassName ||
-                    !empty($method->getParameters()) ||
-                    $method->getName() == __FUNCTION__
+                    $method->class != $modelClassName
+                    || !empty($method->getParameters())
+                    || $method->getName() == __FUNCTION__
                 ) {
                     continue;
                 }
@@ -91,27 +86,27 @@ class SearchUnindex extends Command
                 try {
                     $return = $method->invoke($model);
 
-
                     if ($return instanceof Relation) {
                         $fkParts = explode('.',  $return->getQualifiedForeignKeyName());
                         $fkTable = $fkParts[0];
                         $fkColumn = $fkParts[1];
 
-                        $relationships[$method->getName()] = [
+                        $relationships[$fkTable . '-' . $fkColumn] = [
                             'fk_table'      => $fkTable,
                             'fk_column'     => $fkColumn,
                             'fk_indexed'    => $this->isIndexed($fkTable, $fkColumn)
                         ];
                     }
                 } catch (\Throwable $th) {
-                    $this->error($th->getMessage());
+                    if ($this->option('show-others')) {
+                        $this->error($th->getMessage());
+                    }
                 }
             }
-
-            dd($relationships);
-
         }
         $this->output->progressFinish();
+
+        $this->theTruthAbout($relationships);
      }
 
     /**
@@ -119,14 +114,17 @@ class SearchUnindex extends Command
      *
      * @return void
      */
-    protected function resolveModelsFolderPathAndNameSpace()
+    protected function resolveModelsFolderPath()
     {
+        // check if models directory is provided
+        if (!empty ($this->option('dir'))) {
+            $this->modelsDir = $this->option('dir') . '/';
+        }
+
         $this->modelsPath = app_path();
-        $this->modelsNameSpace = 'App\\';
 
         if (! empty($this->modelsDir)) {
             $this->modelsPath .= '/' . $this->modelsDir;
-            $this->modelsNameSpace .= $this->modelsDir . '\\';
         }
     }
 
@@ -137,17 +135,24 @@ class SearchUnindex extends Command
      */
     protected function getModelRefelctions()
     {
-        return collect(File::files($this->modelsPath))
-            ->map(function ($file) {
-                $fileName = ($file->getRelativePathName());
+        if (! file_exists($this->modelsPath)) {
+            $this->error($this->modelsPath . ' does not exist.');
 
-                if (strpos($fileName, '.php')) {
-                    $class = $this->modelsNameSpace . str_replace('.php', '', $fileName);
+            return false;
+        }
+
+        return collect(File::allFiles($this->modelsPath))
+            ->map(function ($file) {
+
+                if (strpos($file->getRealPath(), '.php')) {
+                    $modelPath = str_replace($file->getPath() . '/', '',  $file->getRealPath());
+                    $modelPathArray =  explode('/', str_replace('.php', '', $modelPath));
+                    $classNameSpace = 'App\\' . implode('\\', $modelPathArray);
 
                     try {
 
-                        if (class_exists($class)) {
-                            $reflection = new ReflectionClass($class);
+                        if (class_exists($classNameSpace)) {
+                            $reflection = new ReflectionClass($classNameSpace);
                             if (
                                 $reflection->isSubclassOf(Model::class) &&
                                 !$reflection->isAbstract()
@@ -157,7 +162,7 @@ class SearchUnindex extends Command
                         }
                     } catch (\Throwable $th) {
                         $this->error($th->getMessage());
-                        $this->warn($fileName . ' is not a model');
+                        $this->warn($file->getFilename() . ' is not a model');
                     }
                 }
 
@@ -166,7 +171,6 @@ class SearchUnindex extends Command
             ->filter(function ($model) {
                 return (! empty($model));
             });
-
     }
 
     /**
@@ -181,5 +185,32 @@ class SearchUnindex extends Command
        $index = DB::select("show index from `{$table}` where Column_name='{$column}';");
 
        return ! empty($index);
+    }
+
+    /**
+     * The truth about relationsships
+     *
+     * no comment.... :)
+     *
+     * @param array $relationships
+     * @return void
+     */
+    protected function theTruthAbout(array $relationships)
+    {
+        // sort by key
+        ksort($relationships);
+
+        // tell the world about the truth in each relationship.
+        foreach ($relationships as $relationship) {
+
+            if (! $relationship['fk_indexed']) {
+                $this->error($relationship['fk_table'] .  '.' . $relationship['fk_column'] . ' is not indexed');
+            } else {
+                // only if show all is flag
+                if ($this->option('show-all')) {
+                    $this->info($relationship['fk_table'] .  '.' . $relationship['fk_column'] . ' is indexed');
+                }
+            }
+        }
     }
 }
