@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Researches;
 
+use App\Models\Device;
 use ReflectionClass;
 use ReflectionMethod;
 use Illuminate\Console\Command;
@@ -145,12 +146,11 @@ class SearchUnindex extends Command
             ->map(function ($file) {
 
                 if (strpos($file->getRealPath(), '.php')) {
-                    $modelPath = str_replace($file->getPath() . '/', '',  $file->getRealPath());
+                    $modelPath = str_replace(app_path() . '/', '',  $file->getRealPath());
                     $modelPathArray =  explode('/', str_replace('.php', '', $modelPath));
                     $classNameSpace = 'App\\' . implode('\\', $modelPathArray);
 
                     try {
-
                         if (class_exists($classNameSpace)) {
                             $reflection = new ReflectionClass($classNameSpace);
                             if (
@@ -182,13 +182,19 @@ class SearchUnindex extends Command
      */
     protected function isIndexed(string $table, string $column)
     {
-       $index = DB::select("show index from `{$table}` where Column_name='{$column}';");
+        try {
+            $index = DB::select("show index from `{$table}` where Column_name='{$column}';");
+        } catch (\Throwable $th) {
+            // this is a must show error.
+            $this->warn($table . '.' . $column . ' not found in database, this may be a relationship from dependencies that are optional');
+            $index = null;
+        }
 
-       return ! empty($index);
+        return ! empty($index);
     }
 
     /**
-     * The truth about relationsships
+     * The truth about relationsships and complexities of balancing life.
      *
      * no comment.... :)
      *
