@@ -209,14 +209,13 @@ class CheckForeignKeys extends Command
                         constraint_name
                     from information_schema.key_column_usage
                     where table_schema = '" . $dbConfig['database'] . "'
-                        and table_name = '{ $pkTable }'
-                        and column_name = '{ $pkColumn }'
-                        and referenced_table_name = '{ $fkTable }'
-                        and referenced_column_name = '{ $fkColumn }'"
+                        and table_name = '{$pkTable}'
+                        and column_name = '{$pkColumn}'
+                        and referenced_table_name = '{$fkTable}'
+                        and referenced_column_name = '{$fkColumn}'"
                 );
 
         } catch (\Throwable $th) {
-
         }
 
         return (! empty($fk));
@@ -237,7 +236,7 @@ class CheckForeignKeys extends Command
 
         // tell the world about the truth in each relationship.
         foreach ($relationships as $relationship) {
-            $fkString = $relationship['method'] . ': ' . $relationship['fk_table'] .  '.' . $relationship['fk_column'];
+            $fkString = $relationship['method'] . '.' .$relationship['method'] . ': ' . $relationship['fk_table'] .  '.' . $relationship['fk_column'];
 
             if (! $relationship['fk_exists']) {
                 // if not in optional list
