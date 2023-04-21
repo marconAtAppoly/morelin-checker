@@ -4,11 +4,6 @@ Checks **MO**del **REL**ationship **IN**dex
 It crawls the app folder recursively. Then crawls those models to check for relationship methods.
 Checks if the foreign key in the relationship is indexed. Finally it spits out the truth about relationhips at the end.
 
-# Only in cinemas
-This is a tear jerking command that can make you cry at the end. You have been warned.
-
-(If the tables are designed properly you don't need to worry -- PEACE...)
-
 # Usage
 **D' Basic**
 
